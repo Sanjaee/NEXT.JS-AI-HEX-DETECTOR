@@ -1,101 +1,176 @@
+"use client";
+
+import { useState } from "react";
+import axios from "axios";
+import { FileUpload } from "@/components/ui/file-upload";
+import toast from "react-hot-toast";
 import Image from "next/image";
+import { z } from "zod";
+
+// Skema validasi file menggunakan Zod
+const fileSchema = z.object({
+  file: z
+    .custom<File>((value) => value instanceof File, {
+      message: "Harus berupa file yang valid",
+    })
+    .refine((file) => file.size <= 3 * 1024 * 1024, {
+      message: "Ukuran file maksimal 3MB",
+    })
+    .refine(
+      (file) =>
+        ["image/jpeg", "image/png", "image/jpg"].includes(file.type),
+      { message: "Hanya mendukung file berformat JPEG atau PNG" }
+    ),
+});
 
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+  const [file, setFile] = useState<File | null>(null);
+  const [hexColor, setHexColor] = useState<string>("");
+  const [preview, setPreview] = useState<string>("");
+  const [loading, setLoading] = useState<boolean>(false);
+  const [previousHash, setPreviousHash] = useState<string>("");
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+  // Fungsi hashing menggunakan SHA-256
+  const calculateFileHash = async (file: File): Promise<string> => {
+    const buffer = await file.arrayBuffer();
+    const hashBuffer = await crypto.subtle.digest("SHA-256", buffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+  };
+
+  // Handle perubahan file
+  const handleFileChange = async (uploadedFiles: File[]) => {
+    if (uploadedFiles.length > 0) {
+      const uploadedFile = uploadedFiles[0];
+
+      // Validasi file menggunakan Zod
+      const validation = fileSchema.safeParse({ file: uploadedFile });
+      if (!validation.success) {
+        toast.error(validation.error.errors[0]?.message || "File tidak valid");
+        return;
+      }
+
+      setFile(uploadedFile);
+      setPreview(URL.createObjectURL(uploadedFile));
+      setHexColor("");
+    }
+  };
+
+  // Handle upload file
+  const handleUpload = async () => {
+    if (!file) {
+      toast.error("Silakan upload file terlebih dahulu!");
+      return;
+    }
+
+    try {
+      const currentHash = await calculateFileHash(file);
+
+      // Validasi gambar yang sama
+      if (currentHash === previousHash) {
+        const loadingToast = toast.loading(
+          "Gambar sudah diproses sebelumnya..."
+        );
+
+        setTimeout(() => {
+          toast.dismiss(loadingToast);
+          toast.success("Gambar sudah diproses sebelumnya!");
+        }, 2000);
+
+        return;
+      }
+
+      setLoading(true);
+      const loadingToast = toast.loading("Mengunggah file...");
+
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const response = await axios.post(
+        "http://127.0.0.1:5000/api/upload",
+        formData
+      );
+
+      toast.dismiss(loadingToast);
+      toast.success("File berhasil diunggah!");
+
+      setHexColor(response.data.hex_color);
+      setPreviousHash(currentHash);
+    } catch (error: any) {
+      toast.dismiss();
+
+      if (error.response?.status === 413) {
+        toast.error("File terlalu besar! Ukuran file harus di bawah 3MB.");
+      } else {
+        console.error("Error uploading file:", error);
+        toast.error("Gagal mengunggah file! Silakan coba lagi.");
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Fungsi untuk menyalin HEX ke clipboard
+  const copyToClipboard = () => {
+    if (hexColor) {
+      navigator.clipboard
+        .writeText(hexColor)
+        .then(() => {
+          toast.success("Kode HEX berhasil disalin!");
+        })
+        .catch(() => {
+          toast.error("Gagal menyalin kode HEX.");
+        });
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-100 p-4">
+      <h1 className="text-3xl font-bold mb-4">Detector Warna Hex</h1>
+
+      {/* Komponen Upload File */}
+      <FileUpload onChange={handleFileChange} />
+
+      {/* Preview Gambar */}
+      {preview && (
+        <Image
+          width={400}
+          height={400}
+          src={preview}
+          alt="Preview"
+          className="w-40 h-40 object-cover mt-4 rounded-lg shadow-md"
+        />
+      )}
+
+      {/* Tombol Upload */}
+      <button
+        onClick={handleUpload}
+        className={`px-4 py-2 mt-4 text-white rounded ${
+          loading
+            ? "bg-gray-400 cursor-not-allowed"
+            : "bg-black border hover:bg-white hover:text-black hover:border-black"
+        } transition duration-300`}
+        disabled={loading}
+      >
+        {loading ? "Memproses..." : "Unggah dan Proses"}
+      </button>
+
+      {/* Hasil Warna Dominan */}
+      {hexColor && (
+        <div className="mt-6 text-center">
+          <button
+            onClick={copyToClipboard}
+            className="mt-2 text-sm text-black "
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+            <h2 className="text-xl font-semibold mb-2">Click to Copy:</h2>
+            <div
+              style={{ backgroundColor: hexColor }}
+              className="w-24 h-24 mx-auto mb-2 border"
+            ></div>
+            <p className="text-lg font-medium">{hexColor}</p>
+          </button>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+      )}
     </div>
   );
 }
