@@ -6,6 +6,7 @@ import { FileUpload } from "@/components/ui/file-upload";
 import toast from "react-hot-toast";
 import Image from "next/image";
 import { z } from "zod";
+import { LinkPreviewDemo } from "@/components/Follow";
 
 // Skema validasi file menggunakan Zod
 const fileSchema = z.object({
@@ -17,8 +18,7 @@ const fileSchema = z.object({
       message: "Ukuran file maksimal 3MB",
     })
     .refine(
-      (file) =>
-        ["image/jpeg", "image/png", "image/jpg"].includes(file.type),
+      (file) => ["image/jpeg", "image/png", "image/jpg"].includes(file.type),
       { message: "Hanya mendukung file berformat JPEG atau PNG" }
     ),
 });
@@ -87,7 +87,7 @@ export default function Home() {
       formData.append("file", file);
 
       const response = await axios.post(
-        "https://muhammadaziz.pythonanywhere.com/api/upload",
+        "https://gamingafriza004.pythonanywhere.com/api/upload",
         formData
       );
 
@@ -171,6 +171,8 @@ export default function Home() {
           </button>
         </div>
       )}
+
+      <LinkPreviewDemo />
     </div>
   );
 }
