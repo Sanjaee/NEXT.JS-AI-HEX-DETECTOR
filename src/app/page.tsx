@@ -86,10 +86,12 @@ export default function Home() {
       const formData = new FormData();
       formData.append("file", file);
 
-      const response = await axios.post(
-        "https://gamingafriza004.pythonanywhere.com/api/upload",
-        formData
-      );
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+      if (!apiUrl) {
+        throw new Error("API URL is not defined");
+      }
+
+      const response = await axios.post(apiUrl, formData);
 
       toast.dismiss(loadingToast);
       toast.success("File berhasil diunggah!");
